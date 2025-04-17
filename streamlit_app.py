@@ -73,7 +73,7 @@ if not st.session_state.selected_person:
 
 # --- Vis tjanser ---
 st.subheader("🧹 Tjanser")
-AREA_OPTIONS = ["Soveværelse", "Stue", "Køkken", "Hjem", "Bad", "Andet"]
+AREA_OPTIONS = ["Stue", "Køkken", "Bad", "Soveværelse", "Hjem", "Andet"]
 FREQ_OPTIONS = {
     "Dagligt": 1,
     "Ugentligt": 7,
@@ -258,3 +258,92 @@ def show_chore_modal():
 
 if st.session_state.edit_chore:
     show_chore_modal()
+
+# --- Historik og point-redigering ---
+st.subheader("🧾 Historik og Pointjustering")
+
+with st.expander("📜 Rediger historik og point"):
+    show_full_history = st.checkbox("Vis al historik grupperet per år, måned og dag")
+
+    if show_full_history:
+        from collections import defaultdict
+
+        grouped = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+        for i, event in enumerate(history):
+            dt_obj = dt.fromisoformat(event["timestamp"])
+            y, m, d = dt_obj.year, dt_obj.month, dt_obj.day
+            grouped[y][m][d].append((i, event))
+
+        for year in sorted(grouped.keys(), reverse=True):
+            st.markdown(f"## {year}")
+            for month in sorted(grouped[year].keys(), reverse=True):
+                st.markdown(f"### {dt(year, month, 1).strftime('%B')}")
+                for day in sorted(grouped[year][month].keys(), reverse=True):
+                    st.markdown(f"**{year}-{month:02}-{day:02}**")
+                    for idx, event in grouped[year][month][day]:
+                        timestamp = dt.fromisoformat(event["timestamp"]).strftime("%Y-%m-%d %H:%M")
+
+                        col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+                        with col1:
+                            new_person = st.selectbox("Person", list(people.keys()), index=list(people.keys()).index(event["person"]), key=f"hist_person_{idx}")
+                        with col2:
+                            new_chore = st.text_input("Tjans", value=event["chore"], key=f"hist_chore_{idx}")
+                        with col3:
+                            new_points = st.number_input("Point", value=event["points"], min_value=0, step=1, key=f"hist_points_{idx}")
+                        with col4:
+                            if st.button("🗑️", key=f"hist_delete_{idx}"):
+                                people[event["person"]]["points"] -= event["points"]
+                                del history[idx]
+                                save_json(HISTORY_FILE, history)
+                                save_json(PEOPLE_FILE, people)
+                                st.rerun()
+
+                        if (new_person != event["person"] or new_chore != event["chore"] or new_points != event["points"]):
+                            if st.button("💾 Gem ændringer", key=f"hist_save_{idx}"):
+                                people[event["person"]]["points"] -= event["points"]
+                                people[new_person]["points"] += new_points
+                                event.update({
+                                    "person": new_person,
+                                    "chore": new_chore,
+                                    "points": new_points,
+                                })
+                                history[idx] = event
+                                save_json(HISTORY_FILE, history)
+                                save_json(PEOPLE_FILE, people)
+                                st.success("Ændringer gemt!")
+                                st.rerun()
+    else:
+        for i, event in enumerate(reversed(history[-50:])):  # Limit to latest 50 for performance
+            idx = len(history) - 1 - i
+            timestamp = dt.fromisoformat(event["timestamp"]).strftime("%Y-%m-%d %H:%M")
+            st.markdown(f"**{timestamp}**")
+
+            col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+            with col1:
+                new_person = st.selectbox("Person", list(people.keys()), index=list(people.keys()).index(event["person"]), key=f"hist_person_{idx}")
+            with col2:
+                new_chore = st.text_input("Tjans", value=event["chore"], key=f"hist_chore_{idx}")
+            with col3:
+                new_points = st.number_input("Point", value=event["points"], min_value=0, step=1, key=f"hist_points_{idx}")
+            with col4:
+                if st.button("🗑️", key=f"hist_delete_{idx}"):
+                    people[event["person"]]["points"] -= event["points"]
+                    del history[idx]
+                    save_json(HISTORY_FILE, history)
+                    save_json(PEOPLE_FILE, people)
+                    st.rerun()
+
+            if (new_person != event["person"] or new_chore != event["chore"] or new_points != event["points"]):
+                if st.button("💾 Gem ændringer", key=f"hist_save_{idx}"):
+                    people[event["person"]]["points"] -= event["points"]
+                    people[new_person]["points"] += new_points
+                    event.update({
+                        "person": new_person,
+                        "chore": new_chore,
+                        "points": new_points,
+                    })
+                    history[idx] = event
+                    save_json(HISTORY_FILE, history)
+                    save_json(PEOPLE_FILE, people)
+                    st.success("Ændringer gemt!")
+                    st.rerun()
