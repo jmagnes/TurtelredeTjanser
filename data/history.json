@@ -58,5 +58,17 @@
     "chore": "Rengør bad",
     "points": 4,
     "timestamp": "2025-04-17T16:12:40.367902"
+  },
+  {
+    "person": "A",
+    "chore": "Rengør bad",
+    "points": 4,
+    "timestamp": "2025-04-17T18:11:47.503447"
+  },
+  {
+    "person": "J",
+    "chore": "Skift sengetøj",
+    "points": 3,
+    "timestamp": "2025-04-17T18:11:54.628959"
   }
 ]

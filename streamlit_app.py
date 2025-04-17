@@ -31,13 +31,16 @@ people = load_json(PEOPLE_FILE)
 history = load_json(HISTORY_FILE)
 
 # --- Init ---
-st.title("🦪 TurtelredeTjanser")
+st.title("🪺 TurtelredeTjanser")
 
 if "selected_person" not in st.session_state:
     st.session_state.selected_person = None
 
 if "edit_chore" not in st.session_state:
     st.session_state.edit_chore = None
+
+if "edit_mode" not in st.session_state:
+    st.session_state.edit_mode = False
 
 # --- Person galleri ---
 st.subheader("👥 Hvem er du?")
@@ -47,10 +50,11 @@ for i, (person, pdata) in enumerate(people.items()):
         is_selected = st.session_state.selected_person == person
         btn_label = f"{person} ({pdata['points']}🪙)"
         btn_style = "primary" if is_selected else "secondary"
-        if st.session_state.selected_person != person:
-            st.rerun()
         if st.button(btn_label, key=f"person_{i}", type=btn_style):
             st.session_state.selected_person = person
+            st.session_state.edit_chore = None  # Luk evt. åben modal
+            st.session_state.edit_mode = False
+            st.rerun()
         recent_tasks = [h for h in reversed(history) if h["person"] == person][:3]
         for h in recent_tasks:
             ts = dt.fromisoformat(h["timestamp"])
@@ -111,16 +115,29 @@ for area, chores_list in chores_by_area.items():
         else:
             color = "🟢"
 
-        label = f"{color} {chore['name']}"
-        btn_style = "primary" if st.session_state.edit_chore == chore["name"] else "secondary"
+        label = f"{color} {chore['name']} ({chore['points']}🪙)"
+        btn_style = "secondary"  # Modal popup gør farvemarkering unødvendig
         if st.button(label, key=f"open_{area}_{i}", type=btn_style):
             st.session_state.edit_chore = chore["name"]
+            st.session_state.edit_mode = False
+            st.rerun()  # Sørg for at modal åbner den korrekte
 
 # --- Redigér/Opret Modal ---
 if st.button("➕ Ny tjans"):
     st.session_state.edit_chore = "_new"
+    st.session_state.edit_mode = True
 
-if st.session_state.edit_chore:
+dialog_title = (
+    "🆕 Ny Tjans"
+    if st.session_state.edit_chore == "_new"
+    else next(
+        (f"{c['name']}" for c in chores if c["name"] == st.session_state.edit_chore),
+        "Tjans"
+    )
+)
+
+@st.dialog(dialog_title)
+def show_chore_modal():
     is_new = st.session_state.edit_chore == "_new"
     chore = {
         "name": "",
@@ -133,9 +150,44 @@ if st.session_state.edit_chore:
         "last_done": None
     } if is_new else next(c for c in chores if c["name"] == st.session_state.edit_chore)
 
-    st.markdown("---")
-    st.subheader("✏️ Redigér Tjans" if not is_new else "🆕 Ny Tjans")
+    if not st.session_state.edit_mode:
+        st.markdown(f"🪙 {chore['points']}")
+        st.markdown(f"⌛ {chore['est_time_min']} min")
+        freq = next((k for k, v in FREQ_OPTIONS.items() if v == chore["frequency_days"]), f"{chore['frequency_days']} dage")
+        st.markdown(f"📅 {freq}")
 
+        if chore["tags"]:
+            st.markdown("""
+            <div style='margin-bottom: 0.5rem;'>
+            """ + " ".join([f"<span style='background-color:#eee; padding:0.2rem 0.5rem; margin-right:0.25rem; border-radius:1rem; font-size:90%'>{tag}</span>" for tag in chore["tags"]]) + "</div>", unsafe_allow_html=True)
+
+        for item in chore["checklist"]:
+            st.markdown(f"- {item}")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if not is_new and st.button("✔️ Fuldfør"):
+                chore["last_done"] = dt.now().isoformat()
+                people[st.session_state.selected_person]["points"] += chore["points"]
+                history.append({
+                    "person": st.session_state.selected_person,
+                    "chore": chore["name"],
+                    "points": chore["points"],
+                    "timestamp": dt.now().isoformat()
+                })
+                save_json(CHORES_FILE, chores)
+                save_json(PEOPLE_FILE, people)
+                save_json(HISTORY_FILE, history)
+                st.success("✅ Tjans markeret!")
+                st.session_state.edit_chore = None
+                st.rerun()
+        with col2:
+            if st.button("✏️ Rediger"):
+                st.session_state.edit_mode = True
+                st.rerun()
+        return
+
+    # Redigerbar visning
     name = st.text_input("Navn", value=chore["name"])
     freq_label = next((k for k, v in FREQ_OPTIONS.items() if v == chore["frequency_days"]), "Brugerdefineret")
     freq = st.selectbox("Hyppighed", list(FREQ_OPTIONS.keys()) + ["Brugerdefineret"], index=list(FREQ_OPTIONS).index(freq_label) if freq_label in FREQ_OPTIONS else len(FREQ_OPTIONS))
@@ -145,49 +197,64 @@ if st.session_state.edit_chore:
     else:
         freq_days = FREQ_OPTIONS[freq]
 
+    area = st.selectbox("Område", AREA_OPTIONS, index=AREA_OPTIONS.index(chore["area"]) if chore["area"] in AREA_OPTIONS else len(AREA_OPTIONS)-1)
     points = st.number_input("Point", value=chore["points"], min_value=0)
     time = st.number_input("Estimeret tid (min)", value=chore["est_time_min"], min_value=0)
     tags = st.text_input("Tags", value=", ".join(chore["tags"]))
     checklist = st.text_area("Tjekliste", value="\n".join(chore["checklist"])).splitlines()
 
-    if st.button("💾 Gem", type="primary"):
-        chore.update({
-            "name": name.strip(),
-            "frequency_days": freq_days,
-            "points": points,
-            "est_time_min": time,
-            "tags": [t.strip() for t in tags.split(",") if t.strip()],
-            "checklist": [line.strip() for line in checklist if line.strip()]
-        })
-        if is_new:
-            chore["area"] = "Andet"  # default value for new
-            chores.append(chore)
-            st.success(f"✅ Tjans '{chore['name']}' oprettet!")
-        else:
-            st.success("✅ Tjans opdateret!")
-        save_json(CHORES_FILE, chores)
-        st.session_state.edit_chore = None
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📂 Gem"):
+            chore.update({
+                "name": name.strip(),
+                "frequency_days": freq_days,
+                "points": points,
+                "est_time_min": time,
+                "area": area,
+                "tags": [t.strip() for t in tags.split(",") if t.strip()],
+                "checklist": [line.strip() for line in checklist if line.strip()]
+            })
+            if is_new:
+                chores.append(chore)
+                st.success(f"✅ Tjans '{chore['name']}' oprettet!")
+            else:
+                st.success("✅ Tjans opdateret!")
+            save_json(CHORES_FILE, chores)
+            st.session_state.edit_chore = None
+            st.session_state.edit_mode = False
+            st.rerun()
+    with col2:
+        if st.button("↩️ Annuller"):
+            st.session_state.edit_mode = False
+            st.rerun()
 
-    if not is_new and st.button("✔️ Fuldfør", type="primary"):
-        chore["last_done"] = dt.now().isoformat()
-        people[st.session_state.selected_person]["points"] += chore["points"]
-        history.append({
-            "person": st.session_state.selected_person,
-            "chore": chore["name"],
-            "points": chore["points"],
-            "timestamp": dt.now().isoformat()
-        })
-        save_json(CHORES_FILE, chores)
-        save_json(PEOPLE_FILE, people)
-        save_json(HISTORY_FILE, history)
-        st.success("✅ Tjans markeret!")
-        st.session_state.edit_chore = None
+    if not is_new:
+        if st.button("🗑️ Slet tjans permanent"):
+            st.session_state.confirm_delete = True
 
-    if not is_new and st.button("🗑️ Slet tjans permanent"):
-        chores.remove(chore)
-        save_json(CHORES_FILE, chores)
-        st.success("🗑️ Tjans slettet")
-        st.session_state.edit_chore = None
+    if st.session_state.get("confirm_delete"):
+        st.warning("⚠️ Er du sikker på, at du vil slette denne tjans permanent?")
+        col_del1, col_del2 = st.columns(2)
+        with col_del1:
+            if st.button("✅ Ja, slet"):
+                chores.remove(chore)
+                save_json(CHORES_FILE, chores)
+                st.success("🗑️ Tjans slettet")
+                st.session_state.edit_chore = None
+                st.session_state.edit_mode = False
+                st.session_state.confirm_delete = False
+                st.rerun()
+        with col_del2:
+            if st.button("❌ Nej, fortryd"):
+                st.session_state.confirm_delete = False
+                st.rerun()
+                chores.remove(chore)
+                save_json(CHORES_FILE, chores)
+                st.success("🗑️ Tjans slettet")
+                st.session_state.edit_chore = None
+                st.session_state.edit_mode = False
+                st.rerun()
 
-    if st.button("❌ Luk"):
-        st.session_state.edit_chore = None
+if st.session_state.edit_chore:
+    show_chore_modal()

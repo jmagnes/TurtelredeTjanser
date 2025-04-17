@@ -11,22 +11,60 @@
     "checklist": [
       "Husk pudebetræk",
       "Tjek lagner"
-    ]
+    ],
+    "last_done": "2025-04-17T18:11:54.628939"
   },
   {
     "name": "Rengør bad",
-    "frequency_days": 5,
+    "frequency_days": 7,
     "points": 4,
     "est_time_min": 20,
     "tags": [
       "bad",
-      " rengøring"
+      "rengøring"
     ],
-    "area": "Badeværelse",
+    "area": "Bad",
     "checklist": [
       "Vask håndvask",
       "Tjek afløb"
     ],
-    "last_done": "2025-04-17T16:12:40.367893"
+    "last_done": "2025-04-17T18:11:47.503424"
+  },
+  {
+    "name": "Støvsuge",
+    "frequency_days": 7,
+    "points": 2,
+    "est_time_min": 10,
+    "area": "Hjem",
+    "tags": [],
+    "checklist": [
+      "a",
+      "b"
+    ],
+    "last_done": null
+  },
+  {
+    "name": "Lave mad",
+    "frequency_days": 1,
+    "points": 3,
+    "est_time_min": 30,
+    "area": "Køkken",
+    "tags": [],
+    "checklist": [],
+    "last_done": null
+  },
+  {
+    "name": "Ordne Pippi",
+    "frequency_days": 1,
+    "points": 1,
+    "est_time_min": 10,
+    "area": "Stue",
+    "tags": [],
+    "checklist": [
+      "Frisk vand",
+      "Frisk mad",
+      "Skifte aviser"
+    ],
+    "last_done": null
   }
 ]
