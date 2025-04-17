@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Skift sengetøj",
+    "frequency_days": 7,
+    "points": 3,
+    "est_time_min": 15,
+    "tags": [
+      "soveværelse"
+    ],
+    "area": "Soveværelse",
+    "checklist": [
+      "Husk pudebetræk",
+      "Tjek lagner"
+    ]
+  },
+  {
+    "name": "Rengør bad",
+    "frequency_days": 5,
+    "points": 4,
+    "est_time_min": 20,
+    "tags": [
+      "bad",
+      " rengøring"
+    ],
+    "area": "Badeværelse",
+    "checklist": [
+      "Vask håndvask",
+      "Tjek afløb"
+    ],
+    "last_done": "2025-04-17T16:12:40.367893"
+  }
+]
