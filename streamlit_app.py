@@ -2,7 +2,7 @@
 import streamlit as st
 import json
 import os
-from datetime import datetime as dt, timedelta
+from datetime import datetime as dt
 
 DATA_DIR = "data"
 CHORES_FILE = os.path.join(DATA_DIR, "chores.json")
@@ -30,131 +30,164 @@ chores = load_json(CHORES_FILE)
 people = load_json(PEOPLE_FILE)
 history = load_json(HISTORY_FILE)
 
-# --- Sidebar ---
-st.sidebar.title("🦪 TurtelredeTjanser")
-view = st.sidebar.radio("Visning", ["✅ Tjanser", "📋 Redigér Tjanser", "📊 Pointoversigt"])
+# --- Init ---
+st.title("🦪 TurtelredeTjanser")
 
-# --- Main: Markér tjanser ---
-if view == "✅ Tjanser":
-    st.title("✅ Udfør Tjanser")
-    person = st.selectbox("Hvem er du?", list(people.keys()))
+if "selected_person" not in st.session_state:
+    st.session_state.selected_person = None
 
-    def get_status_color(days_since, freq):
-        if days_since <= freq * 0.8:
-            return "🟢"
-        elif days_since <= freq:
-            return "🟡"
+if "edit_chore" not in st.session_state:
+    st.session_state.edit_chore = None
+
+# --- Person galleri ---
+st.subheader("👥 Hvem er du?")
+cols = st.columns(len(people))
+for i, (person, pdata) in enumerate(people.items()):
+    with cols[i]:
+        is_selected = st.session_state.selected_person == person
+        btn_label = f"{person} ({pdata['points']}🪙)"
+        btn_style = "primary" if is_selected else "secondary"
+        if st.session_state.selected_person != person:
+            st.rerun()
+        if st.button(btn_label, key=f"person_{i}", type=btn_style):
+            st.session_state.selected_person = person
+        recent_tasks = [h for h in reversed(history) if h["person"] == person][:3]
+        for h in recent_tasks:
+            ts = dt.fromisoformat(h["timestamp"])
+            days_ago = (dt.now().date() - ts.date()).days
+            if days_ago == 0:
+                ago = "i dag"
+            elif days_ago == 1:
+                ago = "i går"
+            else:
+                ago = f"for {days_ago} dage siden"
+            st.caption(f"✔️ {h['chore']} ({ago})")
+
+if not st.session_state.selected_person:
+    st.info("Vælg en person for at fortsætte")
+    st.stop()
+
+# --- Vis tjanser ---
+st.subheader("🧹 Tjanser")
+AREA_OPTIONS = ["Soveværelse", "Stue", "Køkken", "Hjem", "Bad", "Andet"]
+FREQ_OPTIONS = {
+    "Dagligt": 1,
+    "Ugentligt": 7,
+    "Hver anden uge": 14,
+    "Hver tredje uge": 21,
+    "Månedligt": 30,
+    "Kvartalsvist": 90,
+    "Halvårligt": 182,
+    "Årligt": 365
+}
+
+chores_by_area = {}
+for chore in chores:
+    area = chore.get("area", "Andet")
+    chores_by_area.setdefault(area, []).append(chore)
+
+for area, chores_list in chores_by_area.items():
+    st.markdown(f"### {area}")
+    chores_list.sort(key=lambda c: (dt.now() - dt.fromisoformat(c.get("last_done") or "2000-01-01T00:00:00")).days - c["frequency_days"], reverse=True)
+    for i, chore in enumerate(chores_list):
+        last_done = dt.fromisoformat(chore.get("last_done") or "2000-01-01T00:00:00")
+        days_since = (dt.now() - last_done).days
+        freq = chore["frequency_days"]
+        due_in = freq - days_since
+
+        if freq <= 6:
+            yellow_threshold = 1
+        elif freq <= 29:
+            yellow_threshold = 3
+        elif freq <= 180:
+            yellow_threshold = 5
         else:
-            return "🔴"
+            yellow_threshold = 10
 
-    chores_sorted = sorted(
-        chores,
-        key=lambda c: (
-            (dt.now() - dt.fromisoformat(c.get("last_done", "2000-01-01T00:00:00"))).days / c["frequency_days"]
-        ),
-        reverse=True
-    )
-
-    for i, chore in enumerate(chores_sorted):
-        last_done_str = chore.get("last_done")
-        if not last_done_str:
-            days_since = 9999
-            status = "❓"
+        if days_since > freq:
+            color = "🔴"
+        elif due_in <= yellow_threshold:
+            color = "🟡"
         else:
-            days_since = (dt.now() - dt.fromisoformat(last_done_str)).days
-            status = get_status_color(days_since, chore["frequency_days"])
+            color = "🟢"
 
-        with st.expander(f"{status} {chore['name']} ({'aldrig' if days_since == 9999 else f'{days_since} dage'} siden)"):
-            st.write(f"⏱️ Estimeret tid: {chore['est_time_min']} minutter")
-            st.write(f"🏷️ Tags: {', '.join(chore['tags'])}")
-            st.write(f"📍 Område: {chore['area']}")
-            st.write("📝 Tjekliste:")
-            for item in chore["checklist"]:
-                st.markdown(f"- [ ] {item}")
+        label = f"{color} {chore['name']}"
+        btn_style = "primary" if st.session_state.edit_chore == chore["name"] else "secondary"
+        if st.button(label, key=f"open_{area}_{i}", type=btn_style):
+            st.session_state.edit_chore = chore["name"]
 
-            if st.button(f"✅ Marker som gjort af {person}", key=f"done_{i}"):
-                chore["last_done"] = dt.now().isoformat()
-                people[person]["points"] += chore["points"]
-                history.append({
-                    "person": person,
-                    "chore": chore["name"],
-                    "points": chore["points"],
-                    "timestamp": dt.now().isoformat()
-                })
-                save_json(CHORES_FILE, chores)
-                save_json(PEOPLE_FILE, people)
-                save_json(HISTORY_FILE, history)
-                st.success("✅ Tjans markeret!")
+# --- Redigér/Opret Modal ---
+if st.button("➕ Ny tjans"):
+    st.session_state.edit_chore = "_new"
 
-# --- Main: Redigér tjanser ---
-elif view == "📋 Redigér Tjanser":
-    st.title("📋 Opret eller Redigér Tjanser")
-    chore_names = [c["name"] for c in chores]
-    selected = st.selectbox("Vælg en eksisterende tjans eller skriv ny", ["Ny tjans..."] + chore_names)
+if st.session_state.edit_chore:
+    is_new = st.session_state.edit_chore == "_new"
+    chore = {
+        "name": "",
+        "frequency_days": 7,
+        "points": 1,
+        "est_time_min": 10,
+        "area": "Andet",
+        "tags": [],
+        "checklist": [],
+        "last_done": None
+    } if is_new else next(c for c in chores if c["name"] == st.session_state.edit_chore)
 
-    if selected == "Ny tjans...":
-        chore = {
-            "name": "",
-            "frequency_days": 7,
-            "last_done": dt.now().isoformat(),
-            "points": 1,
-            "est_time_min": 5,
-            "tags": [],
-            "area": "",
-            "checklist": []
-        }
-        editing_new = True
+    st.markdown("---")
+    st.subheader("✏️ Redigér Tjans" if not is_new else "🆕 Ny Tjans")
+
+    name = st.text_input("Navn", value=chore["name"])
+    freq_label = next((k for k, v in FREQ_OPTIONS.items() if v == chore["frequency_days"]), "Brugerdefineret")
+    freq = st.selectbox("Hyppighed", list(FREQ_OPTIONS.keys()) + ["Brugerdefineret"], index=list(FREQ_OPTIONS).index(freq_label) if freq_label in FREQ_OPTIONS else len(FREQ_OPTIONS))
+
+    if freq == "Brugerdefineret":
+        freq_days = st.number_input("Indtast antal dage", min_value=1, value=chore["frequency_days"])
     else:
-        chore = next(c for c in chores if c["name"] == selected)
-        editing_new = False
+        freq_days = FREQ_OPTIONS[freq]
 
-    new_name = st.text_input("Navn på tjans", value=chore["name"])
-    frequency = st.number_input("Hyppighed (dage)", min_value=1, value=chore["frequency_days"])
-    points = st.number_input("Point", min_value=0, value=chore["points"])
-    time_min = st.number_input("Estimeret tid (min)", min_value=0, value=chore["est_time_min"])
-    area = st.text_input("Område", value=chore["area"])
-    tags = st.text_input("Tags (kommasepareret)", value=", ".join(chore["tags"])).split(",")
-    checklist = [line for line in st.text_area(
-        "Tjekliste (én per linje)",
-        value="\n".join([] if editing_new else chore["checklist"])
-    ).splitlines() if line.strip()]
+    points = st.number_input("Point", value=chore["points"], min_value=0)
+    time = st.number_input("Estimeret tid (min)", value=chore["est_time_min"], min_value=0)
+    tags = st.text_input("Tags", value=", ".join(chore["tags"]))
+    checklist = st.text_area("Tjekliste", value="\n".join(chore["checklist"])).splitlines()
 
-    updated_chore = {
-        "name": new_name.strip(),
-        "frequency_days": frequency,
-        "points": points,
-        "est_time_min": time_min,
-        "area": area.strip(),
-        "tags": [t.strip() for t in tags if t.strip()],
-        "checklist": checklist,
-        "last_done": chore.get("last_done", dt.now().isoformat())
-    }
-
-    if st.button("✅ Gem tjans"):
-        if editing_new:
-            chores.append(updated_chore)
-            st.success("✅ Ny tjans gemt!")
+    if st.button("💾 Gem", type="primary"):
+        chore.update({
+            "name": name.strip(),
+            "frequency_days": freq_days,
+            "points": points,
+            "est_time_min": time,
+            "tags": [t.strip() for t in tags.split(",") if t.strip()],
+            "checklist": [line.strip() for line in checklist if line.strip()]
+        })
+        if is_new:
+            chore["area"] = "Andet"  # default value for new
+            chores.append(chore)
+            st.success(f"✅ Tjans '{chore['name']}' oprettet!")
         else:
-            for i, c in enumerate(chores):
-                if c["name"] == selected:
-                    chores[i] = updated_chore
-                    break
             st.success("✅ Tjans opdateret!")
         save_json(CHORES_FILE, chores)
+        st.session_state.edit_chore = None
 
-    if not editing_new and st.button("🗑️ Slet tjans"):
-        chores = [c for c in chores if c["name"] != selected]
+    if not is_new and st.button("✔️ Fuldfør", type="primary"):
+        chore["last_done"] = dt.now().isoformat()
+        people[st.session_state.selected_person]["points"] += chore["points"]
+        history.append({
+            "person": st.session_state.selected_person,
+            "chore": chore["name"],
+            "points": chore["points"],
+            "timestamp": dt.now().isoformat()
+        })
+        save_json(CHORES_FILE, chores)
+        save_json(PEOPLE_FILE, people)
+        save_json(HISTORY_FILE, history)
+        st.success("✅ Tjans markeret!")
+        st.session_state.edit_chore = None
+
+    if not is_new and st.button("🗑️ Slet tjans permanent"):
+        chores.remove(chore)
         save_json(CHORES_FILE, chores)
         st.success("🗑️ Tjans slettet")
+        st.session_state.edit_chore = None
 
-# --- Main: Pointoversigt ---
-elif view == "📊 Pointoversigt":
-    st.title("📊 Pointstatus")
-    for person, data in people.items():
-        st.write(f"**{person}**: {data['points']} point")
-
-    st.subheader("🕓 Historik")
-    recent = sorted(history, key=lambda x: x["timestamp"], reverse=True)[:20]
-    for entry in recent:
-        ts = dt.fromisoformat(entry["timestamp"]).strftime("%d.%m %H:%M")
-        st.write(f"{ts}: {entry['person']} lavede '{entry['chore']}' (+{entry['points']} point)")
+    if st.button("❌ Luk"):
+        st.session_state.edit_chore = None
